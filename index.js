@@ -3,6 +3,8 @@ const app = express();
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const { MongoClient, ServerApiVersion } = require('mongodb');
+const nodemailer = require('nodemailer');
+const sgTransport = require('nodemailer-sendgrid-transport');
 const port = process.env.PORT || 5000;
 require('dotenv').config();
 
@@ -31,16 +33,41 @@ const verifyJwt = (req, res, next) => {
   });
 };
 
+var sendEmailOption = {
+  auth: {
+    api_key: process.env.EMAIL_SENDER_KEY,
+  },
+};
+const emailClient = nodemailer.createTransport(sgTransport(sendEmailOption));
+
+const sendAppointmentMail = (email, name, date, slot,treatment) => {
+  var email = {
+    from: process.env.EMAIL_SENDER,
+    to: email,
+    subject: `Your appointment for ${treatment} in on ${date} at ${slot} is confirmed`,
+    text: `Your appointment for ${treatment} in on ${date} at ${slot} is confirmed`,
+    html: '<b>Hello world</b>',
+  };
+  emailClient.sendMail(email, function (err, info) {
+    if (err) {
+      console.log(err);
+    } else {
+      console.log('Message sent: ' , info);
+    }
+  });
+};
+
 async function run() {
   client.connect();
   const collection = client.db('doctorDb').collection('doctorCollection');
   const bookingCollection = client.db('doctorDb').collection('booking');
   const userCollection = client.db('doctorDb').collection('user');
+  const doctorCollection = client.db('doctorDb').collection('doctors');
 
   try {
     app.get('/service', async (req, res) => {
       const query = {};
-      const cursor = collection.find(query);
+      const cursor = collection.find(query).project({ name: 1 });
       const result = await cursor.toArray();
       res.send(result);
     });
@@ -58,6 +85,13 @@ async function run() {
         return res.send({ success: false, booking: exists });
       }
       const result = await bookingCollection.insertOne(booking);
+      sendAppointmentMail(
+        booking.patientEmail,
+        booking.patientName,
+        booking.bookingDate,
+        booking.slot,
+        booking.treatment
+      );
       res.send({ success: true, result });
     });
 
@@ -139,14 +173,19 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/admin/:email',async(req,res) =>{
-        const email = req.params.email;
-        const user = await userCollection.findOne({email:email});
-        console.log(user)
-        const isAdmin = user.role === 'admin';
-        res.send({admin:isAdmin})
-    })
+    app.get('/admin/:email', async (req, res) => {
+      const email = req.params.email;
+      const user = await userCollection.findOne({ email: email });
+      console.log(user);
+      const isAdmin = user.role === 'admin';
+      res.send({ admin: isAdmin });
+    });
 
+    app.post('/doctor', async (req, res) => {
+      const doctor = req.body;
+      const result = await doctorCollection.insertOne(doctor);
+      res.send(result);
+    });
   } finally {
   }
 }
