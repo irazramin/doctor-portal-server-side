@@ -74,6 +74,7 @@ async function run() {
 
     app.post('/booking', async (req, res) => {
       const booking = req.body;
+      console.log(booking)
       const query = {
         treatment: booking.treatment,
         bookingDate: booking.bookingDate,
